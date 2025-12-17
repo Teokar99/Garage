@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Users, Car, MapPin, Phone } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Search, Filter, Users, Car, MapPin, Phone, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { CustomerForm } from '../components/customers/CustomerForm';
 import { CustomerList } from '../components/customers/CustomerList';
@@ -10,14 +10,30 @@ import { usePermissions } from '../hooks/usePermissions';
 
 export const CustomersPage: React.FC<{ onNavigate: (page: string, data?: any) => void }> = ({ onNavigate }) => {
   const permissions = usePermissions();
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [selectedCustomerForVehicle, setSelectedCustomerForVehicle] = useState<Customer | null>(null);
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false);
+      }
+    };
+
+    if (showCustomerDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showCustomerDropdown]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -91,7 +107,15 @@ export const CustomersPage: React.FC<{ onNavigate: (page: string, data?: any) =>
   const handleCloseVehicleForm = () => {
     setShowVehicleForm(false);
     setSelectedCustomerForVehicle(null);
+    setCustomerSearchTerm('');
+    setShowCustomerDropdown(false);
   };
+
+  const filteredCustomersForVehicle = customers.filter(customer =>
+    customer.name.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
+    customer.email.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
+    customer.phone.includes(customerSearchTerm)
+  );
 
   const handleSaveVehicle = () => {
     loadCustomers();
@@ -278,24 +302,62 @@ export const CustomersPage: React.FC<{ onNavigate: (page: string, data?: any) =>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Select Customer *
               </label>
-              <select
-                value={selectedCustomerForVehicle?.id || ''}
-                onChange={(e) => {
-                  const customer = customers.find(c => c.id === e.target.value);
-                  setSelectedCustomerForVehicle(customer || null);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="">Select a customer...</option>
-                {customers
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} - {customer.phone} - {customer.email}
-                    </option>
-                  ))}
-              </select>
+              <div className="relative" ref={dropdownRef}>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={selectedCustomerForVehicle ? `${selectedCustomerForVehicle.name} - ${selectedCustomerForVehicle.phone}` : customerSearchTerm}
+                    onChange={(e) => {
+                      setCustomerSearchTerm(e.target.value);
+                      setShowCustomerDropdown(true);
+                      if (selectedCustomerForVehicle) {
+                        setSelectedCustomerForVehicle(null);
+                      }
+                    }}
+                    onFocus={() => setShowCustomerDropdown(true)}
+                    placeholder="Type customer name, email, or phone..."
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required={!selectedCustomerForVehicle}
+                  />
+                  {selectedCustomerForVehicle && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCustomerForVehicle(null);
+                        setCustomerSearchTerm('');
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {showCustomerDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {filteredCustomersForVehicle.length > 0 ? (
+                      filteredCustomersForVehicle
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((customer) => (
+                          <button
+                            key={customer.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomerForVehicle(customer);
+                              setShowCustomerDropdown(false);
+                              setCustomerSearchTerm('');
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600 last:border-b-0"
+                          >
+                            <div className="font-medium">{customer.name}</div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">{customer.phone} - {customer.email}</div>
+                          </button>
+                        ))
+                    ) : (
+                      <div className="px-3 py-2 text-gray-500 dark:text-gray-400">No customers found</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {selectedCustomerForVehicle && (
