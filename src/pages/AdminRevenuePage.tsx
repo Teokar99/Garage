@@ -40,12 +40,61 @@ export const AdminRevenuePage: React.FC = () => {
   const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
   const [animateBars, setAnimateBars] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     if (userProfile?.role === 'admin') {
       loadRevenue();
     }
   }, [userProfile]);
+
+  useEffect(() => {
+    if (userProfile?.role === 'admin') {
+      loadMonthlyRevenueForYear(selectedYear);
+    }
+  }, [selectedYear]);
+
+  const loadMonthlyRevenueForYear = async (year: number) => {
+    try {
+      setAnimateBars(false);
+
+      const { data, error } = await supabase
+        .from('service_records')
+        .select('date, total');
+
+      if (error) throw error;
+
+      const monthlyMap: Record<number, number> = {
+        0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0,
+        6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0,
+      };
+
+      data?.forEach(record => {
+        const d = new Date(record.date);
+        const amount = record.total || 0;
+
+        if (d.getFullYear() === year) {
+          monthlyMap[d.getMonth()] += amount;
+        }
+      });
+
+      const monthNames = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+
+      setMonthlyRevenue(
+        monthNames.map((name, index) => ({
+          month: name,
+          total: monthlyMap[index],
+        }))
+      );
+
+      setTimeout(() => setAnimateBars(true), 0);
+    } catch (err) {
+      console.error('Failed to load monthly revenue', err);
+    }
+  };
 
   const loadRevenue = async () => {
     try {
@@ -190,9 +239,20 @@ export const AdminRevenuePage: React.FC = () => {
 
       {/* Monthly Revenue Chart */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Monthly Revenue ({new Date().getFullYear()})
-        </h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Monthly Revenue
+          </h2>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+            className="px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {Array.from({ length: 31 }, (_, i) => 2020 + i).map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+        </div>
 
         <div className="flex items-end gap-3 h-52">
           {monthlyRevenue.map((m, index) => (
