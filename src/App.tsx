@@ -10,6 +10,11 @@ import { UsersPage } from './pages/UsersPage';
 import { DatabaseSeeder } from './mocks/DatabaseSeeder';
 import { AdminRevenuePage } from './pages/AdminRevenuePage';
 
+/**
+ * AppContent Component
+ * Main application router handling navigation between different pages
+ * Manages page state and URL synchronization for browser history
+ */
 function AppContent() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState(() => {
@@ -23,7 +28,10 @@ function AppContent() {
   });
   const [pageData, setPageData] = useState<any>(null);
 
-  // Handle browser back/forward buttons
+  /**
+   * Handle browser back/forward navigation
+   * Updates current page state when user uses browser navigation
+   */
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname;
@@ -51,15 +59,22 @@ function AppContent() {
     return <Auth />;
   }
 
+  /**
+   * Navigate to a different page and update URL
+   * Uses History API to update URL without full page reload
+   */
   const navigate = (page: string, data?: any) => {
     setCurrentPage(page);
     setPageData(data);
-    
-    // Update URL without page reload
+
     const url = page === 'dashboard' ? '/' : `/${page}`;
     window.history.pushState(null, '', url);
   };
 
+  /**
+   * Render the appropriate page component based on current page state
+   * Each case corresponds to a different feature section of the app
+   */
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':

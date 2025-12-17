@@ -3,6 +3,10 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase, testSupabaseConnection } from '../lib/supabase';
 import { logError, logInfo, getErrorMessage } from '../utils/errorHandler';
 
+/**
+ * Auth Context Type
+ * Defines the shape of authentication state and methods available throughout the app
+ */
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -23,18 +27,31 @@ export const useAuth = () => {
   return context;
 };
 
+/**
+ * AuthProvider Component
+ * Manages authentication state for the entire application
+ * Handles user login, signup, profile management, and session persistence
+ */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
 
+  /**
+   * Fetch user profile from database
+   * Creates a new profile if it doesn't exist
+   * Includes 5-second timeout to prevent hanging requests
+   */
   const fetchUserProfile = async (userId: string) => {
     try {
       logInfo('Fetching user profile for:', userId);
-      
-      // Add timeout to prevent hanging
-      const timeout = new Promise((_, reject) => 
+
+      /**
+       * Create race between profile fetch and 5-second timeout
+       * Ensures requests don't hang indefinitely
+       */
+      const timeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Profile fetch timeout')), 5000)
       );
 
@@ -48,7 +65,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // Profile doesn't exist, create one
+          /**
+           * Profile doesn't exist for this user
+           * Create a new admin profile with basic user info
+           */
           logInfo('Profile not found, creating new profile');
           
           const createQuery = supabase
@@ -105,11 +125,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /**
+   * Initialize authentication on app load
+   * Tests database connection, retrieves session, and sets up auth state listener
+   */
   useEffect(() => {
-    // Test connection on startup
+    /**
+     * Verify Supabase connection is working
+     * Logs any connection issues to console
+     */
     testSupabaseConnection();
 
-    // Get initial session
+    /**
+     * Restore previous session if user was logged in
+     */
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -119,23 +148,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    // Listen for auth changes
+    /**
+     * Listen for authentication state changes
+     * Updates state when user logs in/out or session expires
+     */
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       logInfo('Auth state changed:', event);
       setSession(session);
       setUser(session?.user ?? null);
-      
+
       if (session?.user) {
-        // Don't block on profile fetch
+        /**
+         * Fetch profile asynchronously to avoid blocking UI
+         * Use default profile if fetch fails
+         */
         fetchUserProfile(session.user.id).catch((error) => {
           logError('Profile fetch failed, using defaults', error);
         });
       } else {
         setUserProfile(null);
       }
-      
+
       setLoading(false);
     });
 
