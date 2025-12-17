@@ -23,9 +23,32 @@ export const exportWorkOrderPdf = async (
 
     const record = freshRecord as ServiceRecord;
 
-    // Create page 1
+    const servicesArray =
+      Array.isArray(record.services) && record.services.length > 0
+        ? record.services
+        : [
+            {
+              description: safe(record.description, "Εργασία"),
+              quantity: 1,
+              unit_price: 0,
+            },
+          ];
+
+    // Split services into chunks of 10
+    const SERVICES_PER_PAGE = 10;
+    const serviceChunks: any[][] = [];
+    for (let i = 0; i < servicesArray.length; i += SERVICES_PER_PAGE) {
+      serviceChunks.push(servicesArray.slice(i, i + SERVICES_PER_PAGE));
+    }
+
+    const pages: HTMLDivElement[] = [];
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    let isFirstPage = true;
+
+    // Create page 1 with customer, vehicle, and first 10 services
     const page1Wrapper = document.createElement("div");
-    page1Wrapper.innerHTML = generatePage1HTML(customer, vehicle, record);
+    page1Wrapper.innerHTML = generatePage1HTML(customer, vehicle, record, serviceChunks[0]);
     page1Wrapper.style.position = "absolute";
     page1Wrapper.style.left = "50%";
     page1Wrapper.style.top = "0";
@@ -33,60 +56,62 @@ export const exportWorkOrderPdf = async (
     page1Wrapper.style.height = "auto";
     page1Wrapper.style.minHeight = "1400px";
     page1Wrapper.style.display = "block";
-
-    // Create page 2
-    const page2Wrapper = document.createElement("div");
-    page2Wrapper.innerHTML = generatePage2HTML(record);
-    page2Wrapper.style.position = "absolute";
-    page2Wrapper.style.left = "50%";
-    page2Wrapper.style.top = "1500px";
-    page2Wrapper.style.transform = "translateX(-50%)";
-    page2Wrapper.style.height = "auto";
-    page2Wrapper.style.minHeight = "1400px";
-    page2Wrapper.style.display = "block";
-
-
     document.body.appendChild(page1Wrapper);
-    document.body.appendChild(page2Wrapper);
+    pages.push(page1Wrapper);
+
+    // Create additional pages for remaining services (if any)
+    for (let i = 1; i < serviceChunks.length; i++) {
+      const pageWrapper = document.createElement("div");
+      pageWrapper.innerHTML = generateServicesPageHTML(serviceChunks[i], i * SERVICES_PER_PAGE, record);
+      pageWrapper.style.position = "absolute";
+      pageWrapper.style.left = "50%";
+      pageWrapper.style.top = `${i * 1500}px`;
+      pageWrapper.style.transform = "translateX(-50%)";
+      pageWrapper.style.height = "auto";
+      pageWrapper.style.minHeight = "1400px";
+      pageWrapper.style.display = "block";
+      document.body.appendChild(pageWrapper);
+      pages.push(pageWrapper);
+    }
+
+    // Create final page with notes and totals
+    const finalPageWrapper = document.createElement("div");
+    finalPageWrapper.innerHTML = generatePage2HTML(record);
+    finalPageWrapper.style.position = "absolute";
+    finalPageWrapper.style.left = "50%";
+    finalPageWrapper.style.top = `${serviceChunks.length * 1500}px`;
+    finalPageWrapper.style.transform = "translateX(-50%)";
+    finalPageWrapper.style.height = "auto";
+    finalPageWrapper.style.minHeight = "1400px";
+    finalPageWrapper.style.display = "block";
+    document.body.appendChild(finalPageWrapper);
+    pages.push(finalPageWrapper);
 
     await new Promise((res) => setTimeout(res, 250));
 
-    // Capture page 1
-    const canvas1 = await html2canvas(page1Wrapper, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-      allowTaint: false
-    });
+    // Capture and add all pages to PDF
+    for (let i = 0; i < pages.length; i++) {
+      const canvas = await html2canvas(pages[i], {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        allowTaint: false
+      });
 
-    // Capture page 2
-    const canvas2 = await html2canvas(page2Wrapper, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-      allowTaint: false
-    });
+      const imgData = canvas.toDataURL("image/jpeg", 1.0);
 
-    const imgData1 = canvas1.toDataURL("image/jpeg", 1.0);
-    const imgData2 = canvas2.toDataURL("image/jpeg", 1.0);
+      if (!isFirstPage) {
+        pdf.addPage();
+      }
 
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+      isFirstPage = false;
+    }
 
-    
-    // Add page 1
-    const pdfHeight1 = (canvas1.height * pdfWidth) / canvas1.width;
-    pdf.addImage(imgData1, "JPEG", 0, 0, pdfWidth, pdfHeight1);
-    
-    // Add page 2
-    pdf.addPage();
-    const pdfHeight2 = (canvas2.height * pdfWidth) / canvas2.width;
-    pdf.addImage(imgData2, "JPEG", 0, 0, pdfWidth, pdfHeight2);
-    
     pdf.save(`work-order-${recordId}.pdf`);
 
-    page1Wrapper.remove();
-    page2Wrapper.remove();
+    pages.forEach(page => page.remove());
     logInfo("PDF created successfully.");
   } catch (err) {
     logError("PDF generation failed:", err);
@@ -106,22 +131,12 @@ const money = (value: any) => {
 function generatePage1HTML(
   customer: Customer,
   vehicle: Vehicle,
-  record: ServiceRecord
+  record: ServiceRecord,
+  services: any[]
 ): string {
   const currentDate = new Date().toLocaleDateString("el-GR");
 
-  const servicesArray =
-    Array.isArray(record.services) && record.services.length > 0
-      ? record.services
-      : [
-          {
-            description: safe(record.description, "Εργασία"),
-            quantity: 1,
-            unit_price: 0,
-          },
-        ];
-
-  const servicesRows = servicesArray
+  const servicesRows = services
     .map((s, i) => {
       const qty = Number(s.quantity) || 1;
       const price = Number(s.unit_price) || 0;
@@ -360,6 +375,161 @@ function generatePage1HTML(
 
   <div class="footer">
     <p>Αυτό το έγγραφο δημιουργήθηκε αυτόματα από το σύστημα διαχείρισης εργασιών.</p>
+    <p>Εντολή Εργασίας ID: ${record.id}</p>
+    <p>Ημερομηνία Δημιουργίας: ${currentDate}</p>
+  </div>
+</div>
+`;
+}
+
+function generateServicesPageHTML(
+  services: any[],
+  startIndex: number,
+  record: ServiceRecord
+): string {
+  const currentDate = new Date().toLocaleDateString("el-GR");
+
+  const servicesRows = services
+    .map((s, i) => {
+      const qty = Number(s.quantity) || 1;
+      const price = Number(s.unit_price) || 0;
+      const total = qty * price;
+
+      return `
+        <tr>
+          <td>${startIndex + i + 1}</td>
+          <td>${safe(s.description)}</td>
+          <td style="text-align:center;">${qty}</td>
+          <td style="text-align:right;">${money(price)}€</td>
+          <td style="text-align:right;font-weight:600;">${money(total)}€</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+.pdf-container {
+  font-family: Arial, sans-serif;
+  width: 794px;
+  min-height: 1123px;
+  padding: 20px;
+  background: #fff;
+  color: #333;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.header {
+  text-align: center;
+  position: relative;
+  margin-bottom: 30px;
+  border-bottom: 2px solid #ef4444;
+  padding-bottom: 15px;
+}
+
+.logo {
+  width: 150px;
+  height: auto;
+  margin-bottom: 10px;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.date {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.section {
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #ef4444;
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ef4444;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #ef4444;
+  padding-bottom: 5px;
+}
+
+.services-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.services-table th {
+  background: #ef4444;
+  color: white;
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.services-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.services-table tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.footer {
+  margin-top: 30px;
+  text-align: center;
+  font-size: 11px;
+  color: #9ca3af;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 15px;
+}
+</style>
+
+<div class="pdf-container" lang="el">
+  <div class="header">
+    <img src="/screenshot_2025-12-04_155357.png" alt="Carabetsos Logo" class="logo" />
+    <div class="page-title">Εντολή Εργασίας - Εργασίες (Συνέχεια)</div>
+    <div class="date">${currentDate}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Εργασίες (Συνέχεια)</div>
+    <table class="services-table">
+      <thead>
+        <tr>
+          <th>Α/Α</th>
+          <th>Περιγραφή</th>
+          <th style="text-align:center;">Ποσότητα</th>
+          <th style="text-align:right;">Τιμή Μονάδας</th>
+          <th style="text-align:right;">Σύνολο</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${servicesRows}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
     <p>Εντολή Εργασίας ID: ${record.id}</p>
     <p>Ημερομηνία Δημιουργίας: ${currentDate}</p>
   </div>
