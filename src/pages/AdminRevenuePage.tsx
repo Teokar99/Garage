@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { DollarSign, Calendar, TrendingUp } from 'lucide-react';
+import { DollarSign, Calendar, TrendingUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
 type RevenueStats = {
-  weekly: number;
-  monthly: number;
-  yearly: number;
+  current: {
+    weekly: number;
+    monthly: number;
+    yearly: number;
+  };
+  previous: {
+    weekly: number;
+    monthly: number;
+    yearly: number;
+  };
 };
 
 type MonthlyRevenue = {
@@ -18,9 +25,16 @@ export const AdminRevenuePage: React.FC = () => {
   const { userProfile } = useAuth();
 
   const [stats, setStats] = useState<RevenueStats>({
-    weekly: 0,
-    monthly: 0,
-    yearly: 0,
+    current: {
+      weekly: 0,
+      monthly: 0,
+      yearly: 0,
+    },
+    previous: {
+      weekly: 0,
+      monthly: 0,
+      yearly: 0,
+    },
   });
 
   const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
@@ -47,15 +61,27 @@ export const AdminRevenuePage: React.FC = () => {
       const now = new Date();
       const year = now.getFullYear();
 
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - now.getDay());
+      // Current week
+      const startOfCurrentWeek = new Date(now);
+      startOfCurrentWeek.setDate(now.getDate() - now.getDay());
+      const startOfPreviousWeek = new Date(startOfCurrentWeek);
+      startOfPreviousWeek.setDate(startOfPreviousWeek.getDate() - 7);
 
-      const startOfMonth = new Date(year, now.getMonth(), 1);
-      const startOfYear = new Date(year, 0, 1);
+      // Current month
+      const startOfCurrentMonth = new Date(year, now.getMonth(), 1);
+      const startOfPreviousMonth = new Date(year, now.getMonth() - 1, 1);
 
-      let weekly = 0;
-      let monthly = 0;
-      let yearly = 0;
+      // Current year
+      const startOfCurrentYear = new Date(year, 0, 1);
+      const startOfPreviousYear = new Date(year - 1, 0, 1);
+      const endOfPreviousYear = new Date(year, 0, 0);
+
+      let currentWeekly = 0;
+      let currentMonthly = 0;
+      let currentYearly = 0;
+      let previousWeekly = 0;
+      let previousMonthly = 0;
+      let previousYearly = 0;
 
       const monthlyMap: Record<number, number> = {
         0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0,
@@ -66,16 +92,26 @@ export const AdminRevenuePage: React.FC = () => {
         const d = new Date(record.date);
         const amount = record.total || 0;
 
-        if (d >= startOfWeek) weekly += amount;
-        if (d >= startOfMonth) monthly += amount;
-        if (d >= startOfYear) yearly += amount;
+        // Current period
+        if (d >= startOfCurrentWeek) currentWeekly += amount;
+        if (d >= startOfCurrentMonth) currentMonthly += amount;
+        if (d >= startOfCurrentYear) currentYearly += amount;
 
+        // Previous period
+        if (d >= startOfPreviousWeek && d < startOfCurrentWeek) previousWeekly += amount;
+        if (d >= startOfPreviousMonth && d < startOfCurrentMonth) previousMonthly += amount;
+        if (d >= startOfPreviousYear && d < startOfCurrentYear) previousYearly += amount;
+
+        // Monthly breakdown for current year
         if (d.getFullYear() === year) {
           monthlyMap[d.getMonth()] += amount;
         }
       });
 
-      setStats({ weekly, monthly, yearly });
+      setStats({
+        current: { weekly: currentWeekly, monthly: currentMonthly, yearly: currentYearly },
+        previous: { weekly: previousWeekly, monthly: previousMonthly, yearly: previousYearly },
+      });
 
       const monthNames = [
         'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -93,7 +129,6 @@ export const AdminRevenuePage: React.FC = () => {
     } finally {
       setLoading(false);
 
-      // 🔥 animate AFTER render
       setTimeout(() => setAnimateBars(true), 0);
     }
   };
@@ -132,18 +167,24 @@ export const AdminRevenuePage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <RevenueCard
           title="This Week"
-          value={stats.weekly}
+          current={stats.current.weekly}
+          previous={stats.previous.weekly}
           icon={<Calendar className="w-6 h-6 text-blue-500" />}
+          period="week"
         />
         <RevenueCard
           title="This Month"
-          value={stats.monthly}
+          current={stats.current.monthly}
+          previous={stats.previous.monthly}
           icon={<TrendingUp className="w-6 h-6 text-green-500" />}
+          period="month"
         />
         <RevenueCard
           title="This Year"
-          value={stats.yearly}
-          icon={<DollarSign className="w-6 h-6 text-purple-500" />}
+          current={stats.current.yearly}
+          previous={stats.previous.yearly}
+          icon={<DollarSign className="w-6 h-6 text-orange-500" />}
+          period="year"
         />
       </div>
 
@@ -184,24 +225,71 @@ export const AdminRevenuePage: React.FC = () => {
 
 const RevenueCard = ({
   title,
-  value,
+  current,
+  previous,
   icon,
+  period,
 }: {
   title: string;
-  value: number;
+  current: number;
+  previous: number;
   icon: React.ReactNode;
-}) => (
-  <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
-    <div className="flex items-center space-x-3 mb-2">
-      <div className="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg">
-        {icon}
+  period: string;
+}) => {
+  const change = previous > 0 ? ((current - previous) / previous) * 100 : 0;
+  const isPositive = change >= 0;
+
+  return (
+    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg">
+            {icon}
+          </div>
+          <h3 className="text-sm text-gray-600 dark:text-gray-400">
+            {title}
+          </h3>
+        </div>
       </div>
-      <h3 className="text-sm text-gray-600 dark:text-gray-400">
-        {title}
-      </h3>
+
+      <div className="mb-4">
+        <p className="text-3xl font-bold text-gray-900 dark:text-white">
+          €{current.toFixed(2)}
+        </p>
+      </div>
+
+      <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-slate-700">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600 dark:text-gray-400">
+            Previous {period}:
+          </span>
+          <span className="text-gray-900 dark:text-white font-medium">
+            €{previous.toFixed(2)}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600 dark:text-gray-400 text-sm">Change:</span>
+          <div className={`flex items-center space-x-1 px-2 py-1 rounded ${
+            isPositive
+              ? 'bg-green-100 dark:bg-green-900/20'
+              : 'bg-red-100 dark:bg-red-900/20'
+          }`}>
+            {isPositive ? (
+              <ArrowUp className={`w-4 h-4 text-green-600 dark:text-green-400`} />
+            ) : (
+              <ArrowDown className={`w-4 h-4 text-red-600 dark:text-red-400`} />
+            )}
+            <span className={`text-sm font-medium ${
+              isPositive
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-red-600 dark:text-red-400'
+            }`}>
+              {Math.abs(change).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
-    <p className="text-3xl font-bold text-gray-900 dark:text-white">
-      €{value.toFixed(2)}
-    </p>
-  </div>
-);
+  );
+};
