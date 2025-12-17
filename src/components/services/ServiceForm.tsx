@@ -49,6 +49,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
   const [customerSearchInput, setCustomerSearchInput] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [customerVehicles, setCustomerVehicles] = useState<Vehicle[]>([]);
 
   // Load all customers on component mount
   React.useEffect(() => {
@@ -58,16 +59,42 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
           .from('customers')
           .select('*')
           .order('name');
-        
+
         if (error) throw error;
         setAllCustomers(data || []);
       } catch (error) {
         logError('Error loading customers', error);
       }
     };
-    
+
     loadAllCustomers();
   }, []);
+
+  // Fetch vehicles for the selected customer
+  React.useEffect(() => {
+    const loadCustomerVehicles = async () => {
+      if (!selectedCustomerId) {
+        setCustomerVehicles([]);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('vehicles')
+          .select('*, customer:customers!inner(*)')
+          .eq('customer_id', selectedCustomerId)
+          .order('make');
+
+        if (error) throw error;
+        setCustomerVehicles(data || []);
+      } catch (error) {
+        logError('Error loading customer vehicles', error);
+        setCustomerVehicles([]);
+      }
+    };
+
+    loadCustomerVehicles();
+  }, [selectedCustomerId]);
 
   const fetchVehicles = async () => {
     try {
@@ -97,11 +124,6 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
     const customerDisplay = `${customer.name} ${customer.phone || ''} ${customer.email || ''}`.toLowerCase();
     return customerDisplay.includes(searchLower);
   });
-
-  // Filter vehicles by selected customer
-  const customerVehicles = selectedCustomerId
-    ? vehicles.filter(vehicle => vehicle.customer?.id === selectedCustomerId)
-    : vehicles;
 
   // Filter vehicles by search input
   const filteredVehicles = customerVehicles.filter(vehicle => {
