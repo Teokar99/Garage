@@ -29,9 +29,9 @@ export interface Permissions {
  * Used throughout the app to enable/disable features and UI elements
  *
  * Permissions by role:
- * - admin: Full access to all features
- * - mechanic: Can view and interact with services, customers, vehicles
- * - secretary: Can view data and manage customer information
+ * - admin: Full access to all features including financials and user management
+ * - mechanic: Can view, create, and edit services, customers, and vehicles (no financials or user management)
+ * - secretary: Can view, create, and edit services, customers, and vehicles (no financials or user management)
  */
 export function usePermissions(): Permissions {
   const { userProfile } = useAuth();
@@ -47,12 +47,17 @@ export function usePermissions(): Permissions {
 
   /**
    * Admin-only permissions
-   * Only admins can view financial data, manage users, or edit core information
+   * Only admins can view financial data and manage users
    */
   const canViewFinancials = role === 'admin';
   const canManageUsers = role === 'admin';
-  const canEditCustomers = role === 'admin';
-  const canEditServices = role === 'admin';
+
+  /**
+   * Edit permissions
+   * Admins, mechanics, and secretaries can edit customers and services
+   */
+  const canEditCustomers = role === 'admin' || role === 'mechanic' || role === 'secretary';
+  const canEditServices = role === 'admin' || role === 'mechanic' || role === 'secretary';
 
   return {
     canViewDashboard,
